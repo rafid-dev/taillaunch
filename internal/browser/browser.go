@@ -53,6 +53,9 @@ func buildArgs(opts Options) []string {
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-background-mode",
+		// Start maximized while keeping Chromium's ordinary decorated window
+		// controls. This is intentionally not --kiosk or --start-fullscreen.
+		"--start-maximized",
 	}
 	if opts.LowMemory {
 		args = append(args,

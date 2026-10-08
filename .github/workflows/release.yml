@@ -33,14 +33,50 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/taillaunch-${GOOS}-${GOARCH}${{ matrix.ext }}" ./cmd/taillaunch
+          version="${GITHUB_REF_NAME}"
+          go build -trimpath -ldflags="-s -w -X main.version=${version}" -o "dist/taillaunch-${version}-${GOOS}-${GOARCH}${{ matrix.ext }}" ./cmd/taillaunch
       - uses: actions/upload-artifact@v4
         with:
           name: taillaunch-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
+  gui-build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, goos: linux, goarch: amd64, ext: '', cgo: '0' }
+          - { runner: ubuntu-latest, goos: linux, goarch: arm64, ext: '', cgo: '0' }
+          - { runner: windows-latest, goos: windows, goarch: amd64, ext: .exe, cgo: '0' }
+          - { runner: windows-latest, goos: windows, goarch: arm64, ext: .exe, cgo: '0' }
+          - { runner: macos-13, goos: darwin, goarch: amd64, ext: '', cgo: '1' }
+          - { runner: macos-14, goos: darwin, goarch: arm64, ext: '', cgo: '1' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Build GUI
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          version="${GITHUB_REF_NAME}"
+          ldflags="-s -w -X main.version=${version}"
+          if [ "${GOOS}" = "windows" ]; then ldflags="${ldflags} -H=windowsgui"; fi
+          go build -trimpath -ldflags="${ldflags}" -o "dist/taillaunch-gui-${version}-${GOOS}-${GOARCH}${{ matrix.ext }}" ./cmd/taillaunch-gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taillaunch-gui-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
   release:
-    needs: build
+    needs: [build, gui-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

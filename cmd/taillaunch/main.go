@@ -6,19 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
-	"github.com/rafid-dev/taillaunch/internal/browser"
+	"github.com/rafid-dev/taillaunch/internal/app"
 	"github.com/rafid-dev/taillaunch/internal/openurl"
-	"github.com/rafid-dev/taillaunch/internal/proxy"
-	"github.com/rafid-dev/taillaunch/internal/routing"
-	"github.com/rafid-dev/taillaunch/internal/tailnet"
 )
 
 var version = "dev"
@@ -123,192 +116,41 @@ func isBasicFlag(name string) bool {
 }
 
 func run(cfg config) error {
-	if err := validateTarget(cfg.url, cfg.proxyOnly); err != nil {
-		return err
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	startupCtx, cancelStartup := context.WithCancel(ctx)
-	defer cancelStartup()
 
 	logger := log.New(os.Stderr, "TailLaunch: ", 0)
-	if !cfg.proxyOnly {
-		// Find the browser before starting Tailscale so an installation problem
-		// never leaves the user signed in with nowhere to open the app.
-		executable, err := browser.Resolve(cfg.browser)
-		if err != nil {
-			return err
-		}
-		cfg.browser = executable
+	memoryMode := app.MemoryNormal
+	if cfg.lowMemory {
+		memoryMode = app.MemoryLow
 	}
-
-	stateDir, profileDir, cleanup, err := prepareDirs(cfg)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := cleanup(); err != nil {
-			logger.Printf("could not fully remove temporary session data; some private app data may remain")
-			if cfg.verbose {
-				logger.Printf("session cleanup details: %v", err)
-			}
-		}
-	}()
-	authOpener := newAuthOpener(openurl.Open, logger, cancelStartup)
-	tc, err := tailnet.New(tailnet.Options{
-		Hostname:   cfg.hostname,
-		StateDir:   stateDir,
-		ControlURL: cfg.controlURL,
-		Ephemeral:  cfg.ephemeral || !cfg.persist,
-		Verbose:    cfg.verbose,
-		OnAuthURL:  authOpener.Open,
-		Logf: func(format string, args ...any) {
-			if cfg.verbose {
-				logger.Printf(format, args...)
-			}
-		},
-	})
-	if err != nil {
-		return err
-	}
-	defer tc.Close()
-
-	snap, err := tc.Up(startupCtx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		if authOpener.Failed() {
-			return fmt.Errorf("could not open the sign-in page. Check your normal browser and try again")
-		}
-		if cfg.verbose {
-			logger.Printf("private app connection details: %v", err)
-		}
-		return fmt.Errorf("could not reach this private app. Check that you're online and have access, then try again")
-	}
-
-	policy := routing.New(true)
-	policy.Update(snap)
-	var refreshLogger *log.Logger
-	if cfg.verbose {
-		refreshLogger = logger
-	}
-	go refreshPolicy(ctx, refreshLogger, tc, policy)
-
-	direct := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
-	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			host = address
-		}
-		if policy.ShouldTailnet(host) {
-			if cfg.verbose {
-				logger.Printf("tailnet -> %s", address)
-			}
-			return tc.DialContext(ctx, network, address)
-		}
-		if cfg.verbose {
-			logger.Printf("direct  -> %s", address)
-		}
-		return direct.DialContext(ctx, network, address)
-	}
-
-	ps := &proxy.Server{ListenAddr: cfg.listen, Dial: dial}
-	proxyAddr, err := ps.Start()
-	if err != nil {
-		if cfg.verbose {
-			logger.Printf("local connection setup details: %v", err)
-		}
-		return fmt.Errorf("could not prepare a private app connection. Close other TailLaunch sessions and try again")
-	}
-	defer func() {
-		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = ps.Close(shutdown)
-	}()
-
-	if cfg.proxyOnly {
-		fmt.Printf("HTTP_PROXY=http://%s\nHTTPS_PROXY=http://%s\n", proxyAddr, proxyAddr)
-		<-ctx.Done()
-		return nil
-	}
-
-	cmd, err := browser.Launch(browser.Options{
-		Executable: cfg.browser,
-		ProfileDir: profileDir,
-		ProxyAddr:  proxyAddr,
+	return app.Run(ctx, app.Options{
 		URL:        cfg.url,
+		Hostname:   cfg.hostname,
+		StateDir:   cfg.stateDir,
+		ProfileDir: cfg.profileDir,
+		Browser:    cfg.browser,
+		Listen:     cfg.listen,
+		ControlURL: cfg.controlURL,
+		Portable:   cfg.portable,
+		Persist:    cfg.persist,
+		ProxyOnly:  cfg.proxyOnly,
 		AppMode:    cfg.appMode,
-		LowMemory:  cfg.lowMemory,
+		MemoryMode: memoryMode,
 		Incognito:  cfg.incognito,
+		Ephemeral:  cfg.ephemeral,
+		Verbose:    cfg.verbose,
+	}, app.Hooks{
+		OpenURL: openurl.Open,
+		Logger:  logger,
+		Output:  func(value string) { fmt.Println(value) },
 	})
-	if err != nil {
-		if cfg.verbose {
-			logger.Printf("browser launch details: %v", err)
-		}
-		return fmt.Errorf("could not open the private app window. Check that your browser is available and try again")
-	}
-	defer func() {
-		if err := cmd.Close(); err != nil {
-			logger.Printf("could not fully close the private app session; some temporary data may remain")
-			if cfg.verbose {
-				logger.Printf("browser session cleanup details: %v", err)
-			}
-		}
-	}()
-
-	wait := make(chan error, 1)
-	go func() { wait <- cmd.Wait() }()
-	select {
-	case <-ctx.Done():
-		_ = cmd.Kill()
-		<-wait
-		return nil
-	case err := <-wait:
-		if err != nil {
-			if cfg.verbose {
-				logger.Printf("browser exit details: %v", err)
-			}
-			return fmt.Errorf("the private app window stopped unexpectedly. Try opening the app again")
-		}
-		return nil
-	}
 }
 
 func validateTarget(rawURL string, proxyOnly bool) error {
 	if proxyOnly {
 		return nil
 	}
-	if strings.TrimSpace(rawURL) == "" {
-		return fmt.Errorf("a private web app URL is required (example: taillaunch https://nas.example.ts.net)")
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid private web app URL: %w", err)
-	}
-	if (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) || u.Hostname() == "" {
-		return fmt.Errorf("private web app URL must be an http or https URL with a host")
-	}
-	return nil
-}
-
-func refreshPolicy(ctx context.Context, logger *log.Logger, tc tailnet.Client, policy *routing.Policy) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			snap, err := tc.Snapshot(ctx)
-			if err != nil {
-				if logger != nil {
-					logger.Printf("private app connection refresh failed: %v", err)
-				}
-				continue
-			}
-			policy.Update(snap)
-		}
-	}
+	_, err := app.ValidateTarget(rawURL)
+	return err
 }

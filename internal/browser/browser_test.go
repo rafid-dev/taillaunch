@@ -21,6 +21,7 @@ func TestBuildArgsUsesDedicatedProfileAndProxy(t *testing.T) {
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-background-mode",
+		"--start-maximized",
 		"--process-per-site",
 		"--renderer-process-limit=2",
 		"--disk-cache-size=67108864",
@@ -49,6 +50,18 @@ func TestBuildArgsUsesAppWindowWhenRequested(t *testing.T) {
 	})
 	if got, want := args[len(args)-1], "--app=https://nas.example.ts.net/"; got != want {
 		t.Fatalf("last argument = %q, want %q", got, want)
+	}
+}
+
+func TestBuildArgsStartsMaximizedAsANormalWindow(t *testing.T) {
+	args := buildArgs(Options{ProfileDir: "profile", ProxyAddr: "127.0.0.1:1234", URL: "https://nas"})
+	if !containsArg(args, "--start-maximized") {
+		t.Fatal("browser launch should start maximized")
+	}
+	for _, forbidden := range []string{"--kiosk", "--start-fullscreen"} {
+		if containsArg(args, forbidden) {
+			t.Fatalf("browser launch should not use %s", forbidden)
+		}
 	}
 }
 
@@ -84,4 +97,13 @@ func TestResolveCandidatesReturnsActionableFailure(t *testing.T) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }
