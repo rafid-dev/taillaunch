@@ -33,6 +33,17 @@ Private apps open maximized in a normal Chromium-family app window with its
 ordinary title bar and controls. Microsoft Edge, Google Chrome, Brave, or
 Chromium must be installed on the machine.
 
+## Screenshots
+
+The launcher starts disconnected, connects through the system browser, and
+keeps advanced options in Settings.
+
+![Disconnected launcher](docs/screenshots/launcher-disconnected.png)
+
+![Connected launcher](docs/screenshots/launcher-connected.png)
+
+![Settings](docs/screenshots/settings.png)
+
 ## CLI quick start
 
 `taillaunch` is the command-line frontend, suitable for scripts and users who
