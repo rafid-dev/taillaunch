@@ -104,8 +104,6 @@ func snapshotFromStatus(status *ipnstate.Status) routing.Snapshot {
 	}
 	if status.CurrentTailnet != nil {
 		snap.MagicDNSSuffix = status.CurrentTailnet.MagicDNSSuffix
-	} else {
-		snap.MagicDNSSuffix = status.MagicDNSSuffix
 	}
 
 	seenNames := make(map[string]struct{})

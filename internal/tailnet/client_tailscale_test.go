@@ -19,9 +19,9 @@ func TestUserLogfSurfacesAuthorizationWithoutLoggingURL(t *testing.T) {
 
 	client.userLogf("To start this tsnet server, go to: %s", authURL)
 	client.userLogf("To start this tsnet server, go to: %s", authURL)
-	client.userLogf("To start this tsnet server, go to: https://headscale.example.net/register?key=private-token")
+	client.userLogf("To start this tsnet server, go to: https://headscale.example.test/register?key=placeholder-key")
 
-	if len(opened) != 2 || opened[0] != authURL || opened[1] != "https://headscale.example.net/register?key=private-token" {
+	if len(opened) != 2 || opened[0] != authURL || opened[1] != "https://headscale.example.test/register?key=placeholder-key" {
 		t.Fatalf("authorization callbacks = %#v", opened)
 	}
 	for _, line := range logs {

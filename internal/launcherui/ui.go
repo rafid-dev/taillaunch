@@ -48,7 +48,7 @@ type snapshot struct {
 // Run starts TailLaunch's normal-user desktop entry point. The backend is
 // native desktop Go-Gui; the target itself still opens in the user's selected
 // Chromium-family browser.
-func Run() error {
+func Run(version string) error {
 	settings, loadErr := app.LoadSettings()
 	if loadErr != nil {
 		settings = app.DefaultSettings()
@@ -65,8 +65,12 @@ func Run() error {
 		m.message = "Using default settings; settings could not be loaded"
 	}
 
+	title := "TailLaunch"
+	if version != "" && version != "dev" {
+		title += " " + version
+	}
 	w := gui.NewWindow(gui.WindowCfg{
-		Title:     "TailLaunch",
+		Title:     title,
 		Width:     720,
 		Height:    520,
 		MinWidth:  560,

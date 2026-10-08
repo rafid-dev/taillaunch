@@ -53,7 +53,7 @@ func TestAuthOpenerReportsBrowserOpenFailure(t *testing.T) {
 func TestAuthOpenerRejectsNonHTTPSAndCredentialURLs(t *testing.T) {
 	for _, rawURL := range []string{
 		"http://login.tailscale.com/a/token",
-		"https://user:password@login.tailscale.com/a/token",
+		"https://user:placeholder@example.test/a/token",
 		"not a URL",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
