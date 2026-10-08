@@ -1,0 +1,11 @@
+/bin/
+/dist/
+/\.build/
+/taillaunch-data/
+/browser-profile/
+/tailscale-state/
+*.exe
+*.log
+.DS_Store
+.idea/
+.vscode/
