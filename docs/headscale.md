@@ -22,9 +22,16 @@ control server.
 
 ## Authentication and scope
 
-TailLaunch still opens the official authentication page through the system
-browser when the selected control server requires authorization. TailLaunch
-does not validate or manage the control server's account policy; confirm that
+TailLaunch opens the sign-in page through the system browser when the selected
+control server requires authorization. With a custom control server, that server
+decides where authentication happens and may send the browser to a different
+HTTPS host (for example an external identity provider), as Tailscale itself
+allows. TailLaunch still requires HTTPS and rejects userinfo, but the sign-in
+host is not restricted to `tailscale.com`, so this authentication flow is inside
+your trust boundary: only use a control server you trust. (With the default
+Tailscale control server, only `tailscale.com` hosts are opened.)
+
+TailLaunch does not validate or manage the control server's account policy; confirm that
 the server, tailnet policy, DNS names, and certificates are configured for the
 private app you want to open.
 

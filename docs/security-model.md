@@ -17,9 +17,17 @@ changes the location of persistent data.
 
 ## Authentication
 
-Authentication is handed to the official Tailscale page in the system browser.
-TailLaunch does not collect a Tailscale password or log the short-lived sign-in
-URL.
+Authentication is handed to the system browser. TailLaunch does not collect a
+Tailscale password or log the short-lived sign-in URL.
+
+With the default Tailscale control plane, TailLaunch only opens HTTPS sign-in
+URLs hosted on `tailscale.com` or its subdomains (such as
+`login.tailscale.com`), and rejects userinfo and lookalike hosts. With a custom
+control server, that server controls the authentication destination and may
+legitimately direct the browser to another HTTPS host, as Tailscale itself
+allows. TailLaunch still requires HTTPS and rejects userinfo, but configuring a
+custom control server places that authentication flow inside your trust
+boundary.
 
 ## Network boundaries
 
