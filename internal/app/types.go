@@ -215,6 +215,7 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 	}
 
 	ps := &proxy.Server{ListenAddr: opts.Listen, Dial: dial}
+	direct.Control = ps.ControlNotSelf
 	proxyAddr, err := ps.Start()
 	if err != nil {
 		if opts.Verbose {
