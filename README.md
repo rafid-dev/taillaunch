@@ -28,6 +28,10 @@ and verbose logging are in **Settings**. Private apps open maximized in a
 normal Chromium-family app window. Edge, Chrome, Brave, or Chromium must be
 installed.
 
+TailLaunch disables Tailscale's diagnostic log upload, including when you use
+Headscale as the control server. The trade-off is that Tailscale support cannot
+access logs from TailLaunch's embedded node. See [SECURITY.md](SECURITY.md).
+
 ## Screenshots
 
 ![Disconnected launcher](docs/screenshots/launcher-disconnected.png)

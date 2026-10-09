@@ -4,14 +4,19 @@ package tailnet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/rafid-dev/taillaunch/internal/routing"
+	"tailscale.com/envknob"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/logtail"
 	"tailscale.com/tsnet"
 )
 
@@ -25,7 +30,52 @@ type tsClient struct {
 	lastAuthURL string
 }
 
+// tsnetLogFiles are the files tsnet's startLogger creates in the state
+// directory (tailscale.com v1.102.5, tsnet/tsnet.go): the logtail config
+// "tailscaled.log.conf" and the filch disk buffer "tailscaled" + ".log1.txt" /
+// ".log2.txt" (logtail/filch/filch.go). Keep tailscaled.state out of this list.
+var tsnetLogFiles = []string{
+	"tailscaled.log.conf",
+	"tailscaled.log1.txt",
+	"tailscaled.log2.txt",
+}
+
+// removeTsnetLogFiles deletes tsnet's on-disk log files from dir. Only regular
+// files with the exact names in tsnetLogFiles are removed.
+func removeTsnetLogFiles(dir string) error {
+	if dir == "" {
+		return nil
+	}
+	var errs []error
+	for _, name := range tsnetLogFiles {
+		path := filepath.Join(dir, name)
+		fi, err := os.Lstat(path)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if !fi.Mode().IsRegular() {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func New(opts Options) (Client, error) {
+	// tsnet always starts logtail, which uploads logs (including the sign-in
+	// URL) to log.tailscale.com even with a custom ControlURL. Turn it off
+	// before the server starts, and drop any logs written by earlier versions.
+	logtail.Disable()
+	envknob.Setenv("TS_NO_LOGS_NO_SUPPORT", "true")
+	if err := removeTsnetLogFiles(opts.StateDir); err != nil && opts.Logf != nil {
+		opts.Logf("could not remove old Tailscale log files: %v", err)
+	}
+
 	c := &tsClient{onAuthURL: opts.OnAuthURL, logf: opts.Logf}
 	c.srv = &tsnet.Server{
 		Hostname:   opts.Hostname,
@@ -83,7 +133,9 @@ func (c *tsClient) userLogf(format string, args ...any) {
 				}
 			}
 			// Auth URLs are short-lived authorization capabilities. Keep them
-			// out of console logs and expose the URL only through the UI callback.
+			// out of console logs and expose the URL only through the UI
+			// callback. New also disables tsnet's logtail upload and local log
+			// buffer, so the URL is not sent to or stored by Tailscale logging.
 			c.log("Tailscale authorization is required")
 			return
 		}
