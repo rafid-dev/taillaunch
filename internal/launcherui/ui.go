@@ -33,16 +33,20 @@ type model struct {
 	message  string
 	busy     bool
 	session  *app.Session
+
+	// settingsErr is the validation error shown on the settings screen.
+	settingsErr string
 }
 
 type snapshot struct {
-	screen    screen
-	settings  app.Settings
-	target    string
-	status    app.Status
-	message   string
-	busy      bool
-	connected bool
+	screen      screen
+	settings    app.Settings
+	settingsErr string
+	target      string
+	status      app.Status
+	message     string
+	busy        bool
+	connected   bool
 }
 
 // Run starts TailLaunch's normal-user desktop entry point. The backend is
@@ -228,6 +232,7 @@ func settingsView(w *gui.Window, m *model, s snapshot) gui.View {
 					ctx.Window.InvalidateLayout()
 				},
 			}),
+			settingsErrorView(s.settingsErr),
 			gui.Row(gui.ContainerCfg{
 				Sizing:  gui.FillFit,
 				Spacing: gui.SpacingPx(10),
@@ -240,6 +245,13 @@ func settingsView(w *gui.Window, m *model, s snapshot) gui.View {
 	})
 }
 
+func settingsErrorView(message string) gui.View {
+	if message == "" {
+		return gui.Row(gui.ContainerCfg{Sizing: gui.FillFit})
+	}
+	return gui.Text(gui.TextCfg{Text: "○ " + message, Mode: gui.TextModeWrap})
+}
+
 func button(label string, variant gui.ButtonVariant, disabled bool, onClick func(gui.EventCtx)) gui.View {
 	return gui.Button(gui.ButtonCfg{Label: label, Variant: variant, Disabled: disabled, OnClick: onClick})
 }
@@ -248,13 +260,14 @@ func (m *model) snapshot() snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return snapshot{
-		screen:    m.screen,
-		settings:  m.settings,
-		target:    m.target,
-		status:    m.status,
-		message:   m.message,
-		busy:      m.busy,
-		connected: m.session != nil,
+		screen:      m.screen,
+		settings:    m.settings,
+		settingsErr: m.settingsErr,
+		target:      m.target,
+		status:      m.status,
+		message:     m.message,
+		busy:        m.busy,
+		connected:   m.session != nil,
 	}
 }
 
@@ -282,29 +295,44 @@ func (m *model) togglePersistence(w *gui.Window) {
 	w.InvalidateLayout()
 }
 
+// connectOptions builds the session options from saved settings, validating
+// the control URL and passing on its normalized form.
+func connectOptions(settings app.Settings) (app.Options, error) {
+	controlURL, err := app.NormalizeControlURL(settings.ControlURL)
+	if err != nil {
+		return app.Options{}, err
+	}
+	return app.Options{
+		Hostname:   "taillaunch",
+		Browser:    settings.Browser,
+		ControlURL: controlURL,
+		Persist:    settings.Persist,
+		AppMode:    true,
+		MemoryMode: settings.MemoryMode,
+		Verbose:    settings.Verbose,
+	}, nil
+}
+
 func (m *model) connect(w *gui.Window) {
 	m.mu.Lock()
 	if m.busy || m.session != nil || m.closed {
 		m.mu.Unlock()
 		return
 	}
+	opts, err := connectOptions(m.settings)
+	if err != nil {
+		m.mu.Unlock()
+		m.setStatus(w, app.StatusFailed, err.Error()+". Fix it in Settings.")
+		return
+	}
 	m.busy = true
-	settings := m.settings
 	ctx := m.ctx
 	m.mu.Unlock()
 	m.setStatus(w, app.StatusStarting, "Connecting to Tailscale")
 
 	go func() {
 		logger := log.New(os.Stderr, "TailLaunch: ", 0)
-		session, err := app.Connect(ctx, app.Options{
-			Hostname:   "taillaunch",
-			Browser:    settings.Browser,
-			ControlURL: settings.ControlURL,
-			Persist:    settings.Persist,
-			AppMode:    true,
-			MemoryMode: settings.MemoryMode,
-			Verbose:    settings.Verbose,
-		}, app.Hooks{
+		session, err := app.Connect(ctx, opts, app.Hooks{
 			OpenURL: openurl.Open,
 			Logger:  logger,
 			Notify: func(status app.Status, message string) {
@@ -397,12 +425,38 @@ func (m *model) disconnect(w *gui.Window) {
 func (m *model) saveSettings(w *gui.Window) {
 	m.mu.Lock()
 	settings := m.settings
+	settingsRaw := settings.ControlURL
+	m.mu.Unlock()
+	// An invalid control URL is reported on the settings screen and nothing is
+	// saved; the form keeps every other edit so the user only fixes that field.
+	controlURL, err := app.NormalizeControlURL(settings.ControlURL)
+	if err != nil {
+		m.setSettingsErr(w, err.Error())
+		return
+	}
+	m.setSettingsErr(w, "")
+	settings.ControlURL = controlURL
+	// Keep the model in step with what is saved, unless the field was edited
+	// again since the snapshot above.
+	m.mu.Lock()
+	if m.settings.ControlURL == settingsRaw {
+		m.settings.ControlURL = controlURL
+	}
 	m.mu.Unlock()
 	if err := app.SaveSettings(settings); err != nil {
 		m.setStatus(w, app.StatusFailed, err.Error())
 		return
 	}
 	m.setStatus(w, m.statusForScreen(), "Settings saved")
+}
+
+func (m *model) setSettingsErr(w *gui.Window, message string) {
+	m.mu.Lock()
+	m.settingsErr = message
+	m.mu.Unlock()
+	if w != nil {
+		w.InvalidateLayout()
+	}
 }
 
 func (m *model) statusForScreen() app.Status {
