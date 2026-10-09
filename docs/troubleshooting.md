@@ -27,10 +27,30 @@ target browser is not already holding the selected persistent profile open.
 
 ## A previous session left data behind
 
-TailLaunch cleans up temporary directories on normal close, but a crash,
-forced termination, or browser file lock can prevent removal. Close any
-remaining TailLaunch/Chromium process before cleaning up temporary data. Never
-delete a persistent state directory unless you intend to sign in again.
+TailLaunch cleans up its temporary directories on normal close, but a crash,
+forced termination, or browser file lock can prevent removal. The next time
+TailLaunch starts, it automatically removes the `taillaunch-state-*` and
+`taillaunch-browser-*` folders that crashed sessions left in the system
+temporary directory, once no running TailLaunch session holds them. If a
+folder cannot be removed (for example because a browser process still has files
+open), TailLaunch logs the failure, carries on, and tries again at the next
+start. Close any remaining TailLaunch/Chromium process and start TailLaunch
+again, or delete the folder yourself. Never delete a persistent state directory
+unless you intend to sign in again.
+
+Folders left by crashed sessions of versions before v0.2.1 (including v0.2.0)
+carry no marker, so they are **not** removed automatically; TailLaunch cannot
+tell whether such a folder still belongs to a running session. They may need
+one-time manual removal. Close all TailLaunch windows and any browser windows
+TailLaunch opened first, then delete the folders named `taillaunch-state-*` and
+`taillaunch-browser-*` (followed by digits) from the temporary directory:
+
+- Windows: `%TEMP%`, usually `C:\Users\<you>\AppData\Local\Temp`
+- macOS and Linux: `$TMPDIR`, or `/tmp` when it is unset (on macOS `$TMPDIR` is
+  a per-user folder under `/var/folders`)
+
+The `taillaunch-state-*` folders contain `tailscaled.state`, the Tailscale node
+key.
 
 ## Need help?
 

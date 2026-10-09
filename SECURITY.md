@@ -31,7 +31,14 @@ The GUI and CLI use temporary Tailscale node state and a temporary Chromium
 profile unless persistence is explicitly enabled. TailLaunch attempts to
 remove this per-run data when the session closes. A crash, forced termination,
 or operating-system file lock can prevent cleanup, so users should treat the
-local machine as part of the security boundary.
+local machine as part of the security boundary. At the next start TailLaunch
+removes disposable folders left behind by crashed sessions once no running
+session holds them. Until then, the leftover data, including the Tailscale node
+key, remains on disk. Folders left by crashed sessions of versions before v0.2.1
+(including v0.2.0) have no session marker, are not removed automatically, and
+may need one-time manual removal: close all TailLaunch windows, then delete
+`taillaunch-state-*` and `taillaunch-browser-*` folders from `%TEMP%` on
+Windows or from `$TMPDIR` (or `/tmp`) on macOS and Linux.
 
 The GUI's **Remember me on this device** option and the CLI's `--persist` flag
 opt into reuse across launches. Persistent state includes a Tailscale node
@@ -56,7 +63,8 @@ form, or write the short-lived sign-in URL to its own logs.
   TailLaunch still requires HTTPS, a host name, and no userinfo, but does not
   require the sign-in host to match the control server. Configuring a custom
   control server places that authentication flow inside your trust boundary, so
-  only use servers you trust.
+  only use servers you trust. Use an `https://` control server URL: TailLaunch
+  only opens HTTPS sign-in pages.
 
 Because TailLaunch also disables Tailscale's diagnostic log upload (see below),
 the sign-in URL is not sent to Tailscale's log service or kept in the embedded
@@ -80,6 +88,11 @@ embedded node to help diagnose problems.
 
 - The local HTTP proxy binds to loopback only (`127.0.0.1`) and refuses a
   non-loopback listener.
+- The loopback proxy is unauthenticated. Any process that can connect to its
+  port can use it, including to reach your tailnet destinations. Processes
+  running as the same user are already inside the trust boundary. On a shared
+  machine, however, another local user account that discovers the port could
+  use the proxy while your session is open.
 - Tailnet destinations use the embedded userspace Tailscale node. Other
   destinations use the machine's normal network connection.
 - HTTPS uses a normal CONNECT tunnel. TailLaunch does not intercept, decrypt,
