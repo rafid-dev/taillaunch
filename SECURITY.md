@@ -41,9 +41,23 @@ does not enable persistence by itself.
 
 ### Authentication
 
-When authentication is needed, TailLaunch opens the official Tailscale sign-in
-page in the system browser. TailLaunch does not collect a Tailscale password,
-embed a password form, or write the short-lived sign-in URL to its own logs.
+When authentication is needed, TailLaunch opens the sign-in page in the system
+browser. TailLaunch does not collect a Tailscale password, embed a password
+form, or write the short-lived sign-in URL to its own logs.
+
+- **Default Tailscale control plane** (no control server set, or Tailscale's own
+  control URL): TailLaunch only opens HTTPS sign-in URLs on `tailscale.com` or
+  its subdomains (such as `login.tailscale.com`), without userinfo. Lookalikes
+  such as `tailscale.com.evil.example` and `eviltailscale.com` are refused. This
+  matches Tailscale's own check for the official control plane.
+- **Custom control server** (for example Headscale): the control server decides
+  where authentication happens, and Tailscale itself allows it to send the
+  browser to a different HTTPS host, for example an external identity provider.
+  TailLaunch still requires HTTPS, a host name, and no userinfo, but does not
+  require the sign-in host to match the control server. Configuring a custom
+  control server places that authentication flow inside your trust boundary, so
+  only use servers you trust.
+
 Because TailLaunch also disables Tailscale's diagnostic log upload (see below),
 the sign-in URL is not sent to Tailscale's log service or kept in the embedded
 node's local log buffer.

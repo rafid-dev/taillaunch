@@ -16,7 +16,7 @@ func TestAuthOpenerOpensSignInURLOnceWithoutLoggingIt(t *testing.T) {
 	opener := newAuthOpener(func(rawURL string) error {
 		opened = append(opened, rawURL)
 		return nil
-	}, log.New(&output, "", 0), func() {})
+	}, log.New(&output, "", 0), func() {}, "")
 
 	opener.Open(authURL)
 	opener.Open(authURL)
@@ -39,7 +39,7 @@ func TestAuthOpenerReportsBrowserOpenFailure(t *testing.T) {
 	var output bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	opener := newAuthOpener(func(string) error { return errors.New("test open failure") }, log.New(&output, "", 0), cancel)
+	opener := newAuthOpener(func(string) error { return errors.New("test open failure") }, log.New(&output, "", 0), cancel, "")
 	opener.Open("https://login.tailscale.com/a/token")
 
 	if !strings.Contains(output.String(), "couldn't open the sign-in page automatically") {
@@ -64,7 +64,7 @@ func TestAuthOpenerRejectsNonHTTPSAndCredentialURLs(t *testing.T) {
 			opener := newAuthOpener(func(string) error {
 				opened = true
 				return nil
-			}, log.New(&output, "", 0), cancel)
+			}, log.New(&output, "", 0), cancel, "")
 			opener.Open(rawURL)
 			if opened {
 				t.Fatal("invalid sign-in URL was opened")

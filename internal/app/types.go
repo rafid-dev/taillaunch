@@ -139,7 +139,7 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	startupCtx, cancelStartup := context.WithCancel(sessionCtx)
-	auth := newAuthOpener(openURL, logger, cancelStartup, func(message string) {
+	auth := newAuthOpener(openURL, logger, cancelStartup, opts.ControlURL, func(message string) {
 		notify(StatusAuthenticating, message)
 	})
 	tc, err := tailnet.New(tailnet.Options{

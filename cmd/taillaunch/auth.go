@@ -9,6 +9,6 @@ import (
 
 type authOpener = app.AuthOpener
 
-func newAuthOpener(openURL func(string) error, logger *log.Logger, cancel context.CancelFunc) *authOpener {
-	return app.NewAuthOpener(openURL, logger, cancel)
+func newAuthOpener(openURL func(string) error, logger *log.Logger, cancel context.CancelFunc, controlURL string) *authOpener {
+	return app.NewAuthOpener(openURL, logger, cancel, controlURL)
 }
