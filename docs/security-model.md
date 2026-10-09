@@ -9,9 +9,13 @@ Each non-persistent launch uses private, per-run Tailscale state and a
 dedicated browser profile. TailLaunch attempts to remove both when the session
 closes. Forced termination, crashes, and operating-system file locks can leave
 temporary files behind. At the next start TailLaunch removes disposable folders
-left by crashed sessions once no running session holds them (folders from
-v0.2.0 after 24 hours); until then the leftover data, including the Tailscale
-node key, remains on disk.
+left by crashed sessions once no running session holds them; until then the
+leftover data, including the Tailscale node key, remains on disk. Folders left
+by crashed sessions of versions before v0.2.1 (including v0.2.0) have no
+session marker, are not removed automatically, and may need one-time manual
+removal: close all TailLaunch windows, then delete `taillaunch-state-*` and
+`taillaunch-browser-*` folders from `%TEMP%` on Windows or from `$TMPDIR` (or
+`/tmp`) on macOS and Linux.
 
 The GUI's **Remember me on this device** and the CLI's `--persist` explicitly
 opt into reusable state. Persistent state contains a Tailscale node identity

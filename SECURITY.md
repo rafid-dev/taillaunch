@@ -33,8 +33,12 @@ remove this per-run data when the session closes. A crash, forced termination,
 or operating-system file lock can prevent cleanup, so users should treat the
 local machine as part of the security boundary. At the next start TailLaunch
 removes disposable folders left behind by crashed sessions once no running
-session holds them (folders from v0.2.0 after 24 hours). Until then, the
-leftover data, including the Tailscale node key, remains on disk.
+session holds them. Until then, the leftover data, including the Tailscale node
+key, remains on disk. Folders left by crashed sessions of versions before v0.2.1
+(including v0.2.0) have no session marker, are not removed automatically, and
+may need one-time manual removal: close all TailLaunch windows, then delete
+`taillaunch-state-*` and `taillaunch-browser-*` folders from `%TEMP%` on
+Windows or from `$TMPDIR` (or `/tmp`) on macOS and Linux.
 
 The GUI's **Remember me on this device** option and the CLI's `--persist` flag
 opt into reuse across launches. Persistent state includes a Tailscale node

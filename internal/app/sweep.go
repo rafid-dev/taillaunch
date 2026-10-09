@@ -2,16 +2,10 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
 )
-
-// legacyMaxAge is how old an unmarked (v0.2.0) folder must be before it is
-// deleted. v0.2.0 wrote no marker or lock, so age is the only evidence.
-const legacyMaxAge = 24 * time.Hour
 
 // sessionDirName matches what os.MkdirTemp produces for the two patterns in
 // PrepareDirs: the pattern followed by a decimal random number. It is
@@ -26,18 +20,16 @@ func SweepStaleSessionDirs(logf func(format string, args ...any)) int {
 }
 
 // sweeper deletes a folder only when it is a real directory directly under
-// root, owned by the current user, with a name TailLaunch generates, and
-// either
-//   - carries the marker and its lock can be taken (no live session holds
-//     it), or
-//   - carries no valid marker and has not been modified for legacyAge.
+// root, owned by the current user, with a name TailLaunch generates, that
+// carries the session marker and whose lock can be taken (no live session holds
+// it). Folders without a valid marker, such as those left by sessions that
+// predate the marker, are never touched: nothing about an unmarked folder, its
+// age included, shows that its session is dead.
 //
 // The state and browser folders get independent random names, so they cannot
 // be paired; each is judged on its own. Each session holds a lock on both.
 type sweeper struct {
 	root      string
-	now       func() time.Time
-	legacyAge time.Duration
 	logf      func(format string, args ...any)
 	removeAll func(path string) error
 }
@@ -46,7 +38,7 @@ func newSweeper(root string, logf func(format string, args ...any)) *sweeper {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
-	return &sweeper{root: root, now: time.Now, legacyAge: legacyMaxAge, logf: logf, removeAll: os.RemoveAll}
+	return &sweeper{root: root, logf: logf, removeAll: os.RemoveAll}
 }
 
 func (s *sweeper) run() int {
@@ -96,19 +88,7 @@ func (s *sweeper) eligible(dir string) (bool, error) {
 
 func (s *sweeper) sweepDir(dir string) bool {
 	if !hasMarker(dir) {
-		age, err := dirAge(dir, s.now())
-		if err != nil {
-			s.logf("stale session cleanup: skipping %q: %v", dir, err)
-			return false
-		}
-		if age < s.legacyAge {
-			return false
-		}
-		if err := s.removeAll(dir); err != nil {
-			s.logf("stale session cleanup: could not remove %q: %v", dir, err)
-			return false
-		}
-		return true
+		return false
 	}
 
 	lock, err := acquireSessionLock(dir)
@@ -161,30 +141,4 @@ func (s *sweeper) empty(dir string) error {
 		return errors.Join(errs...)
 	}
 	return s.removeAll(filepath.Join(dir, markerFileName))
-}
-
-// dirAge is the time since dir or any of its direct children was last
-// modified. A folder from a still-running v0.2.0 session keeps getting fresh
-// files (Tailscale state, browser profile data), which keeps it from being
-// treated as abandoned just because the folder itself is old.
-func dirAge(dir string, now time.Time) (time.Duration, error) {
-	fi, err := os.Lstat(dir)
-	if err != nil {
-		return 0, err
-	}
-	newest := fi.ModTime()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return 0, fmt.Errorf("read folder: %w", err)
-	}
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-	}
-	return now.Sub(newest), nil
 }

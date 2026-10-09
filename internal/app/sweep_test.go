@@ -185,55 +185,54 @@ func TestSweepKeepsSymlinks(t *testing.T) {
 	mustExist(t, filepath.Join(target, "tailscaled.state"))
 }
 
-func TestSweepLegacyDirsOnlyPastAgeThreshold(t *testing.T) {
+func TestSweepNeverTouchesUnmarkedDirs(t *testing.T) {
 	root := t.TempDir()
-	old := mkdirWithState(t, root, "taillaunch-state-1")
-	ageDir(t, old, 25*time.Hour)
-	recent := mkdirWithState(t, root, "taillaunch-browser-2")
-	ageDir(t, recent, 23*time.Hour)
-	// An old folder with a recently written file may belong to a long-running
-	// v0.2.0 session and must be kept.
-	active := mkdirWithState(t, root, "taillaunch-state-3")
-	ageDir(t, active, 48*time.Hour)
-	fresh := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(filepath.Join(active, "tailscaled.state"), fresh, fresh); err != nil {
+	var dirs []string
+	for i, age := range []time.Duration{0, time.Hour, 25 * time.Hour, 30 * 24 * time.Hour, 5 * 365 * 24 * time.Hour} {
+		dir := mkdirWithState(t, root, fmt.Sprintf("taillaunch-state-%d", i))
+		ageDir(t, dir, age)
+		dirs = append(dirs, dir)
+		dir = mkdirWithState(t, root, fmt.Sprintf("taillaunch-browser-%d", i))
+		ageDir(t, dir, age)
+		dirs = append(dirs, dir)
+	}
+	// A lock file alone, or a marker with the wrong content, is not a marker.
+	lockOnly := mkdirWithState(t, root, "taillaunch-state-100")
+	if err := os.WriteFile(filepath.Join(lockOnly, lockFileName), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-
-	s, _ := newTestSweeper(root)
-	if got := s.run(); got != 1 {
-		t.Errorf("run() = %d, want 1", got)
-	}
-	mustNotExist(t, old)
-	mustExist(t, recent)
-	mustExist(t, active)
-}
-
-func TestSweepBogusMarkerIsTreatedAsLegacy(t *testing.T) {
-	root := t.TempDir()
-	dir := mkdirWithState(t, root, "taillaunch-state-8")
-	if err := os.WriteFile(filepath.Join(dir, markerFileName), []byte("not ours"), 0o600); err != nil {
+	bogus := mkdirWithState(t, root, "taillaunch-state-101")
+	if err := os.WriteFile(filepath.Join(bogus, markerFileName), []byte("not ours"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	for _, dir := range []string{lockOnly, bogus} {
+		ageDir(t, dir, 365*24*time.Hour)
+		dirs = append(dirs, dir)
+	}
 
-	s, _ := newTestSweeper(root)
+	s, logs := newTestSweeper(root)
 	if got := s.run(); got != 0 {
-		t.Errorf("run() = %d, want 0 (recent, marker content wrong)", got)
+		t.Errorf("run() = %d, want 0", got)
 	}
-	mustExist(t, dir)
+	for _, dir := range dirs {
+		mustExist(t, filepath.Join(dir, "tailscaled.state"))
+		mustExist(t, filepath.Join(dir, "Default", "Cache", "data_0"))
+	}
+	if len(logs.lines) != 0 {
+		t.Errorf("unmarked folders should be skipped silently: %q", logs.lines)
+	}
 }
 
 func TestSweepDeletionErrorsDoNotAbort(t *testing.T) {
 	root := t.TempDir()
 	stuck := makeStale(t, root, "taillaunch-browser-100")
-	legacyStuck := mkdirWithState(t, root, "taillaunch-state-101")
-	ageDir(t, legacyStuck, 48*time.Hour)
+	stuckToo := makeStale(t, root, "taillaunch-state-101")
 	later := makeStale(t, root, "taillaunch-state-102")
 
 	s, logs := newTestSweeper(root)
 	real := s.removeAll
 	s.removeAll = func(path string) error {
-		for _, bad := range []string{stuck, legacyStuck} {
+		for _, bad := range []string{stuck, stuckToo} {
 			if path == bad || strings.HasPrefix(path, bad+string(filepath.Separator)) {
 				return fmt.Errorf("simulated: file in use")
 			}
@@ -245,11 +244,11 @@ func TestSweepDeletionErrorsDoNotAbort(t *testing.T) {
 		t.Errorf("run() = %d, want 1", got)
 	}
 	mustExist(t, stuck)
-	mustExist(t, legacyStuck)
+	mustExist(t, stuckToo)
 	mustNotExist(t, later)
 
 	joined := strings.Join(logs.lines, "\n")
-	for _, bad := range []string{stuck, legacyStuck} {
+	for _, bad := range []string{stuck, stuckToo} {
 		if !strings.Contains(joined, fmt.Sprintf("%q", bad)) {
 			t.Errorf("failure for %s was not logged; log:\n%s", bad, joined)
 		}
@@ -261,7 +260,7 @@ func TestSweepDeletionErrorsDoNotAbort(t *testing.T) {
 		t.Errorf("retry run() = %d, want 2", got)
 	}
 	mustNotExist(t, stuck)
-	mustNotExist(t, legacyStuck)
+	mustNotExist(t, stuckToo)
 }
 
 func TestSweepMissingRootIsHarmless(t *testing.T) {
