@@ -43,7 +43,24 @@ does not enable persistence by itself.
 
 When authentication is needed, TailLaunch opens the official Tailscale sign-in
 page in the system browser. TailLaunch does not collect a Tailscale password,
-embed a password form, or write the short-lived sign-in URL to its logs.
+embed a password form, or write the short-lived sign-in URL to its own logs.
+Because TailLaunch also disables Tailscale's diagnostic log upload (see below),
+the sign-in URL is not sent to Tailscale's log service or kept in the embedded
+node's local log buffer.
+
+### Tailscale diagnostic logs
+
+The embedded Tailscale node (`tsnet`) normally uploads diagnostic logs to
+`log.tailscale.com`, even when a custom control server such as Headscale is
+configured. TailLaunch disables that upload (`logtail.Disable()` and
+`TS_NO_LOGS_NO_SUPPORT=true`) before the node starts, for both Tailscale and
+Headscale control servers. On startup with a persistent state directory it
+also deletes log files left by earlier runs (`tailscaled.log.conf`,
+`tailscaled.log1.txt`, `tailscaled.log2.txt`); it never touches
+`tailscaled.state`.
+
+The trade-off is that Tailscale support cannot access logs from TailLaunch's
+embedded node to help diagnose problems.
 
 ### Network boundaries
 

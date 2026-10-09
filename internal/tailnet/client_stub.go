@@ -12,6 +12,8 @@ import (
 
 type stubClient struct{}
 
+func InitProcess() {}
+
 func New(Options) (Client, error) { return &stubClient{}, nil }
 func (c *stubClient) Up(context.Context) (routing.Snapshot, error) {
 	return routing.Snapshot{

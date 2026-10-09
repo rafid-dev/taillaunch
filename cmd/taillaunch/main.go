@@ -12,6 +12,7 @@ import (
 
 	"github.com/rafid-dev/taillaunch/internal/app"
 	"github.com/rafid-dev/taillaunch/internal/openurl"
+	"github.com/rafid-dev/taillaunch/internal/tailnet"
 )
 
 var version = "dev"
@@ -36,6 +37,8 @@ type config struct {
 }
 
 func main() {
+	// Must be first: sets a process-wide Tailscale knob before any goroutines start.
+	tailnet.InitProcess()
 	cfg := parseFlags()
 	if cfg.showVer {
 		fmt.Println("TailLaunch", version)
