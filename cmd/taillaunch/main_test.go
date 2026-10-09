@@ -41,6 +41,19 @@ func TestValidateTarget(t *testing.T) {
 	}
 }
 
+func TestRunRejectsInvalidControlURL(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.url = "https://nas.example.ts.net"
+	cfg.controlURL = "http://headscale.example.com"
+	// An unusable browser makes a run that wrongly skips validation fail fast
+	// with a different error instead of launching anything.
+	cfg.browser = "taillaunch-test-no-such-browser"
+	err := run(cfg)
+	if err == nil || !strings.Contains(err.Error(), "control URL must use https://") {
+		t.Fatalf("run error = %v, want the control URL error", err)
+	}
+}
+
 func TestWriteUsagePutsPrivateAppFlowBeforeAdvancedSettings(t *testing.T) {
 	flags := flag.NewFlagSet("taillaunch", flag.ContinueOnError)
 	flags.String("url", "", "HTTP(S) URL for the private app")

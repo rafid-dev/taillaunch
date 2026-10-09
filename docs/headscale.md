@@ -22,9 +22,12 @@ control server.
 
 ## Authentication and scope
 
-Use an `https://` control server URL. TailLaunch only opens HTTPS sign-in
-pages, so a control server that is reachable only over plain `http://` cannot
-complete browser sign-in.
+TailLaunch requires an `https://` control server URL and rejects `http://`
+before any session starts, in both the CLI and the GUI, with the error
+`control URL must use https://`. TailLaunch only opens HTTPS sign-in pages, so a
+control server that is reachable only over plain `http://` cannot complete
+browser sign-in. The URL must also have a host and no username or password,
+query, or fragment. A blank URL selects the normal Tailscale control server.
 
 TailLaunch opens the sign-in page through the system browser when the selected
 control server requires authorization. With a custom control server, that server

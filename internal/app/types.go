@@ -120,6 +120,11 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 		opts.Listen = "127.0.0.1:0"
 	}
 
+	if err := ValidateControlURL(opts.ControlURL); err != nil {
+		notify(StatusFailed, err.Error())
+		return nil, err
+	}
+
 	notify(StatusStarting, "Preparing the private connection")
 	var executable string
 	if !opts.ProxyOnly {
