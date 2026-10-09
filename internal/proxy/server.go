@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -83,6 +84,10 @@ func (s *Server) Close(ctx context.Context) error {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.targetsSelf(r) {
+		http.Error(w, "TailLaunch proxy requires an absolute-URI request to another host", http.StatusBadRequest)
+		return
+	}
 	if r.Method == http.MethodConnect {
 		s.handleConnect(w, r)
 		return
@@ -151,7 +156,62 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	copyHeader(w.Header(), resp.Header)
 	removeHopHeaders(w.Header())
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	copyAndFlush(w, resp.Body)
+}
+
+// copyAndFlush copies src to w, flushing after each chunk so streaming
+// responses such as server-sent events reach the client as they arrive.
+func copyAndFlush(w http.ResponseWriter, src io.Reader) {
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return
+			}
+			_ = rc.Flush()
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// targetsSelf reports whether r cannot be proxied safely: a non-CONNECT
+// request without an absolute URI, or any destination that is this proxy's
+// own listener (which would make the proxy dial itself recursively).
+func (s *Server) targetsSelf(r *http.Request) bool {
+	host, defaultPort := r.Host, "443"
+	if r.Method != http.MethodConnect {
+		if r.URL.Host == "" {
+			return true
+		}
+		host, defaultPort = r.URL.Host, "80"
+		if r.URL.Scheme == "https" {
+			defaultPort = "443"
+		}
+	}
+	if s.ln == nil {
+		return false
+	}
+	listen, ok := s.ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		h, p = strings.Trim(host, "[]"), defaultPort
+	}
+	if p != fmt.Sprint(listen.Port) {
+		return false
+	}
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.Equal(listen.IP)
 }
 
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
@@ -256,4 +316,28 @@ func (s *Server) logf(format string, args ...any) {
 	if s.Logf != nil {
 		s.Logf(format, args...)
 	}
+}
+
+// ControlNotSelf is a net.Dialer.Control hook for the host dialer. It runs
+// against the resolved address of each connection attempt and rejects any
+// loopback or unspecified (0.0.0.0, ::) address on the proxy's own listener
+// port, so a hostname that resolves to loopback cannot make the proxy dial
+// itself. Linux and macOS route connections to unspecified addresses to
+// loopback listeners.
+func (s *Server) ControlNotSelf(network, address string, _ syscall.RawConn) error {
+	if s.ln == nil {
+		return nil
+	}
+	listen, ok := s.ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return nil
+	}
+	h, p, err := net.SplitHostPort(address)
+	if err != nil || p != fmt.Sprint(listen.Port) {
+		return nil
+	}
+	if ip := net.ParseIP(h); ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
+		return errors.New("proxy: refusing to dial the proxy's own listener")
+	}
+	return nil
 }
