@@ -9,7 +9,28 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go test -tags stub ./...
+      - name: govulncheck
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          repo-checkout: false
+          go-version-file: go.mod
+          go-package: ./...
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -43,6 +64,7 @@ jobs:
           path: dist/*
 
   gui-build:
+    needs: verify
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -80,7 +102,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [build, gui-build]
+    needs: [verify, build, gui-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
