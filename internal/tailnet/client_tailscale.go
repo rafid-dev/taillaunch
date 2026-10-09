@@ -66,15 +66,20 @@ func removeTsnetLogFiles(dir string) error {
 	return errors.Join(errs...)
 }
 
+// InitProcess sets Tailscale's process-wide TS_NO_LOGS_NO_SUPPORT knob. Call it
+// as the first statement of main(): envknob.Setenv is not safe against
+// concurrent reads of registered knobs, so it must run before any goroutines
+// start and before anything in Tailscale reads the knob.
+func InitProcess() { envknob.SetNoLogsNoSupport() }
+
 func New(opts Options) (Client, error) {
 	// tsnet always starts logtail, which uploads logs (including the sign-in
-	// URL) to log.tailscale.com even with a custom ControlURL. Turn it off
-	// before the server starts, and drop any logs written by earlier versions.
-	logtail.Disable()
-	envknob.Setenv("TS_NO_LOGS_NO_SUPPORT", "true")
+	// URL) to log.tailscale.com even with a custom ControlURL. Drop any logs
+	// written by earlier versions and turn logtail off before tsnet starts.
 	if err := removeTsnetLogFiles(opts.StateDir); err != nil && opts.Logf != nil {
 		opts.Logf("could not remove old Tailscale log files: %v", err)
 	}
+	logtail.Disable()
 
 	c := &tsClient{onAuthURL: opts.OnAuthURL, logf: opts.Logf}
 	c.srv = &tsnet.Server{
