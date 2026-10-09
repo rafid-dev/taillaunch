@@ -22,6 +22,10 @@ control server.
 
 ## Authentication and scope
 
+Use an `https://` control server URL. TailLaunch only opens HTTPS sign-in
+pages, so a control server that is reachable only over plain `http://` cannot
+complete browser sign-in.
+
 TailLaunch opens the sign-in page through the system browser when the selected
 control server requires authorization. With a custom control server, that server
 decides where authentication happens and may send the browser to a different

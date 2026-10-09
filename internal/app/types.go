@@ -131,6 +131,10 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 		}
 	}
 
+	if n := SweepStaleSessionDirs(logger.Printf); n > 0 && opts.Verbose {
+		logger.Printf("removed %d stale session folder(s) left by earlier sessions", n)
+	}
+
 	stateDir, profileDir, cleanup, err := PrepareDirs(opts)
 	if err != nil {
 		notify(StatusFailed, err.Error())

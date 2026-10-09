@@ -41,7 +41,28 @@ func PrepareDirs(opts Options) (stateDir, profileDir string, cleanup func() erro
 		return "", "", nil, errors.Join(err, removeDirs(profileDir, stateDir))
 	}
 
-	return stateDir, profileDir, func() error { return removeDirs(profileDir, stateDir) }, nil
+	// Each folder is locked for the life of the session so that a later
+	// startup can tell it from one left behind by a crash.
+	var locks []*sessionLock
+	releaseLocks := func() error {
+		var errs []error
+		for _, lock := range locks {
+			errs = append(errs, lock.Release())
+		}
+		return errors.Join(errs...)
+	}
+	for _, dir := range []string{stateDir, profileDir} {
+		lock, err := lockSessionDir(dir)
+		if err != nil {
+			return "", "", nil, errors.Join(fmt.Errorf("lock temporary directory %q: %w", dir, err), releaseLocks(), removeDirs(profileDir, stateDir))
+		}
+		locks = append(locks, lock)
+	}
+
+	return stateDir, profileDir, func() error {
+		// Release first: Windows cannot delete a file that is still open.
+		return errors.Join(releaseLocks(), removeDirs(profileDir, stateDir))
+	}, nil
 }
 
 func removeDirs(dirs ...string) error {

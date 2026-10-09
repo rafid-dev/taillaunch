@@ -8,7 +8,10 @@ policy is in [SECURITY.md](../SECURITY.md).
 Each non-persistent launch uses private, per-run Tailscale state and a
 dedicated browser profile. TailLaunch attempts to remove both when the session
 closes. Forced termination, crashes, and operating-system file locks can leave
-temporary files behind.
+temporary files behind. At the next start TailLaunch removes disposable folders
+left by crashed sessions once no running session holds them (folders from
+v0.2.0 after 24 hours); until then the leftover data, including the Tailscale
+node key, remains on disk.
 
 The GUI's **Remember me on this device** and the CLI's `--persist` explicitly
 opt into reusable state. Persistent state contains a Tailscale node identity
@@ -27,11 +30,17 @@ control server, that server controls the authentication destination and may
 legitimately direct the browser to another HTTPS host, as Tailscale itself
 allows. TailLaunch still requires HTTPS and rejects userinfo, but configuring a
 custom control server places that authentication flow inside your trust
-boundary.
+boundary. Use an `https://` control server URL; TailLaunch only opens HTTPS
+sign-in pages.
 
 ## Network boundaries
 
 - The local HTTP proxy listens on loopback (`127.0.0.1`) only.
+- The loopback proxy is unauthenticated. Any process that can connect to its
+  port can use it, including to reach your tailnet destinations. Processes
+  running as the same user are already inside the trust boundary. On a shared
+  machine, however, another local user account that discovers the port could
+  use the proxy while your session is open.
 - Tailnet destinations go through the embedded userspace Tailscale node.
 - Other destinations use the machine's normal network connection.
 - HTTPS uses a normal CONNECT tunnel; TailLaunch does not decrypt or replace
