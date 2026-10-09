@@ -70,6 +70,41 @@ func TestSaveSettingsRejectsInvalidControlURLAndKeepsOtherSettings(t *testing.T)
 	}
 }
 
+func TestSaveSettingsStoresTrimmedControlURLInModelAndFile(t *testing.T) {
+	path := isolateSettingsDir(t)
+	m := newTestModel(app.Settings{ControlURL: "  https://headscale.example.com\t", MemoryMode: app.MemoryAuto})
+
+	m.saveSettings(nil)
+
+	const want = "https://headscale.example.com"
+	if got := m.snapshot().settings.ControlURL; got != want {
+		t.Errorf("model control URL after save = %q, want %q", got, want)
+	}
+	saved, err := app.LoadSettingsFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ControlURL != want {
+		t.Errorf("saved control URL = %q, want %q", saved.ControlURL, want)
+	}
+}
+
+func TestConnectOptionsUseTrimmedControlURL(t *testing.T) {
+	opts, err := connectOptions(app.Settings{ControlURL: " https://headscale.example.com ", Browser: "chrome", Persist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://headscale.example.com"; opts.ControlURL != want {
+		t.Fatalf("connect options control URL = %q, want %q", opts.ControlURL, want)
+	}
+	if opts.Browser != "chrome" || !opts.Persist || !opts.AppMode {
+		t.Fatalf("other options were dropped: %#v", opts)
+	}
+	if _, err := connectOptions(app.Settings{ControlURL: "http://headscale.example.com"}); err == nil {
+		t.Fatal("connectOptions accepted an http control URL")
+	}
+}
+
 func TestConnectRejectsInvalidControlURLBeforeStartingSession(t *testing.T) {
 	isolateSettingsDir(t)
 	m := newTestModel(app.Settings{

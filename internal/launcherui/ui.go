@@ -295,14 +295,32 @@ func (m *model) togglePersistence(w *gui.Window) {
 	w.InvalidateLayout()
 }
 
+// connectOptions builds the session options from saved settings, validating
+// the control URL and passing on its normalized form.
+func connectOptions(settings app.Settings) (app.Options, error) {
+	controlURL, err := app.NormalizeControlURL(settings.ControlURL)
+	if err != nil {
+		return app.Options{}, err
+	}
+	return app.Options{
+		Hostname:   "taillaunch",
+		Browser:    settings.Browser,
+		ControlURL: controlURL,
+		Persist:    settings.Persist,
+		AppMode:    true,
+		MemoryMode: settings.MemoryMode,
+		Verbose:    settings.Verbose,
+	}, nil
+}
+
 func (m *model) connect(w *gui.Window) {
 	m.mu.Lock()
 	if m.busy || m.session != nil || m.closed {
 		m.mu.Unlock()
 		return
 	}
-	settings := m.settings
-	if err := app.ValidateControlURL(settings.ControlURL); err != nil {
+	opts, err := connectOptions(m.settings)
+	if err != nil {
 		m.mu.Unlock()
 		m.setStatus(w, app.StatusFailed, err.Error()+". Fix it in Settings.")
 		return
@@ -314,15 +332,7 @@ func (m *model) connect(w *gui.Window) {
 
 	go func() {
 		logger := log.New(os.Stderr, "TailLaunch: ", 0)
-		session, err := app.Connect(ctx, app.Options{
-			Hostname:   "taillaunch",
-			Browser:    settings.Browser,
-			ControlURL: settings.ControlURL,
-			Persist:    settings.Persist,
-			AppMode:    true,
-			MemoryMode: settings.MemoryMode,
-			Verbose:    settings.Verbose,
-		}, app.Hooks{
+		session, err := app.Connect(ctx, opts, app.Hooks{
 			OpenURL: openurl.Open,
 			Logger:  logger,
 			Notify: func(status app.Status, message string) {
@@ -415,14 +425,24 @@ func (m *model) disconnect(w *gui.Window) {
 func (m *model) saveSettings(w *gui.Window) {
 	m.mu.Lock()
 	settings := m.settings
+	settingsRaw := settings.ControlURL
 	m.mu.Unlock()
 	// An invalid control URL is reported on the settings screen and nothing is
 	// saved; the form keeps every other edit so the user only fixes that field.
-	if err := app.ValidateControlURL(settings.ControlURL); err != nil {
+	controlURL, err := app.NormalizeControlURL(settings.ControlURL)
+	if err != nil {
 		m.setSettingsErr(w, err.Error())
 		return
 	}
 	m.setSettingsErr(w, "")
+	settings.ControlURL = controlURL
+	// Keep the model in step with what is saved, unless the field was edited
+	// again since the snapshot above.
+	m.mu.Lock()
+	if m.settings.ControlURL == settingsRaw {
+		m.settings.ControlURL = controlURL
+	}
+	m.mu.Unlock()
 	if err := app.SaveSettings(settings); err != nil {
 		m.setStatus(w, app.StatusFailed, err.Error())
 		return

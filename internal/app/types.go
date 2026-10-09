@@ -61,6 +61,13 @@ type Options struct {
 	Verbose    bool
 }
 
+// Seams replaced by tests to observe what Connect hands to the auth opener and
+// the Tailscale client.
+var (
+	makeAuthOpener   = newAuthOpener
+	newTailnetClient = tailnet.New
+)
+
 // Hooks let a frontend supply browser opening, logging, and status reporting.
 type Hooks struct {
 	OpenURL func(string) error
@@ -120,10 +127,12 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 		opts.Listen = "127.0.0.1:0"
 	}
 
-	if err := ValidateControlURL(opts.ControlURL); err != nil {
+	controlURL, err := NormalizeControlURL(opts.ControlURL)
+	if err != nil {
 		notify(StatusFailed, err.Error())
 		return nil, err
 	}
+	opts.ControlURL = controlURL
 
 	notify(StatusStarting, "Preparing the private connection")
 	var executable string
@@ -148,10 +157,10 @@ func Connect(ctx context.Context, opts Options, hooks Hooks) (*Session, error) {
 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	startupCtx, cancelStartup := context.WithCancel(sessionCtx)
-	auth := newAuthOpener(openURL, logger, cancelStartup, opts.ControlURL, func(message string) {
+	auth := makeAuthOpener(openURL, logger, cancelStartup, opts.ControlURL, func(message string) {
 		notify(StatusAuthenticating, message)
 	})
-	tc, err := tailnet.New(tailnet.Options{
+	tc, err := newTailnetClient(tailnet.Options{
 		Hostname:   opts.Hostname,
 		StateDir:   stateDir,
 		ControlURL: opts.ControlURL,
