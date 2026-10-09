@@ -10,13 +10,14 @@ import (
 	"sync/atomic"
 )
 
-// Tailscale's hosted control plane, as defined by tailscale.com v1.102.5:
-// ipn.DefaultControlURL and the one legacy name ipn.IsLoginServerSynonym treats
-// as equivalent. They are copied here so the stub build does not need the
-// Tailscale module; a !stub test checks they still match upstream.
+// Hosts of Tailscale's hosted control plane, as defined by tailscale.com
+// v1.102.5: ipn.DefaultControlURL and the one legacy name
+// ipn.IsLoginServerSynonym treats as equivalent. They are copied here so the
+// stub build does not need the Tailscale module; a !stub test checks they still
+// match upstream.
 const (
-	tailscaleDefaultControlURL = "https://controlplane.tailscale.com"
-	tailscaleLoginControlURL   = "https://login.tailscale.com"
+	tailscaleDefaultControlHost = "controlplane.tailscale.com"
+	tailscaleLoginControlHost   = "login.tailscale.com"
 )
 
 // AuthOpener validates and opens the short-lived sign-in URL sent by the
@@ -56,17 +57,32 @@ func NewAuthOpener(openURL func(string) error, logger *log.Logger, cancel contex
 }
 
 // isOfficialControlURL reports whether controlURL selects Tailscale's hosted
-// control plane: empty, or one of the URLs Tailscale treats as the default.
-// Upstream compares these strings exactly; this also ignores case, surrounding
-// space and trailing slashes so a cosmetic variant of Tailscale's own URL can't
-// fall into the permissive custom-server path.
+// control plane: empty, or an https URL for controlplane.tailscale.com or
+// login.tailscale.com (the URLs Tailscale treats as the default) with the
+// default port, no path beyond "/", and no userinfo, query or fragment. Upstream
+// compares these strings exactly; classifying by parsed components also covers
+// cosmetic variants such as a case change or an explicit :443, so they can't
+// fall into the permissive custom-server path. Anything else is custom.
 func isOfficialControlURL(controlURL string) bool {
-	normalized := strings.ToLower(strings.TrimRight(strings.TrimSpace(controlURL), "/"))
-	switch normalized {
-	case "", tailscaleDefaultControlURL, tailscaleLoginControlURL:
+	controlURL = strings.TrimSpace(controlURL)
+	if controlURL == "" {
 		return true
 	}
-	return false
+	if strings.ContainsAny(controlURL, "?#") {
+		return false
+	}
+	u, err := url.Parse(controlURL)
+	if err != nil || u.Opaque != "" || u.User != nil || !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	if p := u.Port(); p != "" && p != "443" {
+		return false
+	}
+	if u.Path != "" && u.Path != "/" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == tailscaleDefaultControlHost || host == tailscaleLoginControlHost
 }
 
 // isTailscaleHost reports whether host, a parsed hostname with any port

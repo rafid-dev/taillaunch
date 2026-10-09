@@ -11,10 +11,12 @@ import (
 // The stub build can't import Tailscale, so auth.go copies these URLs. Fail if
 // a Tailscale upgrade changes what counts as the official control plane.
 func TestOfficialControlURLsMatchTailscale(t *testing.T) {
-	if tailscaleDefaultControlURL != ipn.DefaultControlURL {
-		t.Fatalf("tailscaleDefaultControlURL = %q, ipn.DefaultControlURL = %q", tailscaleDefaultControlURL, ipn.DefaultControlURL)
+	defaultURL := "https://" + tailscaleDefaultControlHost
+	loginURL := "https://" + tailscaleLoginControlHost
+	if defaultURL != ipn.DefaultControlURL {
+		t.Fatalf("default control URL = %q, ipn.DefaultControlURL = %q", defaultURL, ipn.DefaultControlURL)
 	}
-	if !ipn.IsLoginServerSynonym(tailscaleLoginControlURL) || !ipn.IsLoginServerSynonym(tailscaleDefaultControlURL) {
+	if !ipn.IsLoginServerSynonym(loginURL) || !ipn.IsLoginServerSynonym(defaultURL) {
 		t.Fatal("ipn.IsLoginServerSynonym no longer matches the official control URLs copied into auth.go")
 	}
 }

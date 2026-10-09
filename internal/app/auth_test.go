@@ -151,3 +151,83 @@ func TestAuthOpenerStatusNamesTheTrustedSource(t *testing.T) {
 		t.Fatalf("sign-in host was written to logs: %q", custom)
 	}
 }
+
+func TestIsOfficialControlURL(t *testing.T) {
+	tests := []struct {
+		controlURL string
+		want       bool
+	}{
+		// Official: empty, or Tailscale's hosted control plane (https, the
+		// controlplane/login host, default port, root path only).
+		{"", true},
+		{"   ", true},
+		{"https://controlplane.tailscale.com", true},
+		{"https://login.tailscale.com", true},
+		{"https://controlplane.tailscale.com/", true},
+		{"  https://login.tailscale.com/  ", true},
+		{"HTTPS://ControlPlane.Tailscale.COM", true},
+		{"https://controlplane.tailscale.com:443", true},
+		{"https://login.tailscale.com:443", true},
+		{"https://login.tailscale.com:443/", true},
+		{"HTTPS://LOGIN.TAILSCALE.COM:443", true},
+
+		// Custom: any other port, a path, another scheme or host, userinfo,
+		// query or fragment.
+		{"https://controlplane.tailscale.com:8443", false},
+		{"https://login.tailscale.com:8443", false},
+		{"https://login.tailscale.com:80", false},
+		{"https://login.tailscale.com/path", false},
+		{"https://controlplane.tailscale.com/a/b", false},
+		{"https://login.tailscale.com//", false},
+		{"http://controlplane.tailscale.com", false},
+		{"http://login.tailscale.com:443", false},
+		{"https://tailscale.com", false},
+		{"https://api.tailscale.com", false},
+		{"https://login.tailscale.com.", false},
+		{"https://login.tailscale.com.evil.example", false},
+		{"https://eviltailscale.com", false},
+		{"https://headscale.example.test", false},
+		{"https://user@login.tailscale.com", false},
+		{"https://user:placeholder@controlplane.tailscale.com", false},
+		{"https://login.tailscale.com?x=1", false},
+		{"https://login.tailscale.com/?x=1", false},
+		{"https://login.tailscale.com?", false},
+		{"https://login.tailscale.com#frag", false},
+		{"https://login.tailscale.com/#", false},
+		{"login.tailscale.com", false},
+		{"not a URL", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.controlURL, func(t *testing.T) {
+			if got := isOfficialControlURL(tt.controlURL); got != tt.want {
+				t.Fatalf("isOfficialControlURL(%q) = %v, want %v", tt.controlURL, got, tt.want)
+			}
+		})
+	}
+}
+
+// An explicit Tailscale control URL with the default HTTPS port still gets the
+// strict tailscale.com sign-in host rule; other ports and paths are custom.
+func TestAuthOpenerControlURLPortAndPathClassification(t *testing.T) {
+	const otherHost = "https://auth.example.com/a/token"
+	for _, controlURL := range []string{
+		"https://controlplane.tailscale.com:443",
+		"https://login.tailscale.com:443",
+	} {
+		if opened, _ := authOutcome(t, controlURL, otherHost); opened {
+			t.Errorf("control %q: non-Tailscale sign-in host was opened", controlURL)
+		}
+		if opened, _ := authOutcome(t, controlURL, "https://login.tailscale.com/a/token"); !opened {
+			t.Errorf("control %q: Tailscale sign-in host was not opened", controlURL)
+		}
+	}
+	for _, controlURL := range []string{
+		"https://controlplane.tailscale.com:8443",
+		"https://login.tailscale.com/path",
+		"http://login.tailscale.com",
+	} {
+		if opened, _ := authOutcome(t, controlURL, otherHost); !opened {
+			t.Errorf("control %q is custom, so a different HTTPS sign-in host must be allowed", controlURL)
+		}
+	}
+}
